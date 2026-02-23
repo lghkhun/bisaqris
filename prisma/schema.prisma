@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  projects     Project[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Project {
+  id         String        @id @default(cuid())
+  userId     String
+  name       String
+  webhookUrl String
+  appSlug    String        @unique
+  logoUrl    String?
+  payoutBankName String?
+  payoutAccountName String?
+  payoutAccountNumber String?
+  isActive   Boolean       @default(true)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKeys    ApiKey[]
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  transactions Transaction[]
+  withdrawals Withdrawal[]
+  webhookLogs WebhookLog[]
+  idempotencyKeys IdempotencyKey[]
+  rateLimitWindows RateLimitWindow[]
+
+  @@index([userId])
+}
+
+model Withdrawal {
+  id                   String   @id @default(cuid())
+  projectId            String
+  status               String   @default("pending")
+  amountGross          Int
+  amountFee            Int
+  amountNet            Int
+  payoutBankName       String?
+  payoutAccountName    String?
+  payoutAccountNumber  String?
+  note                 String?
+  processedAt          DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([status])
+}
+
+model ApiKey {
+  id        String    @id @default(cuid())
+  projectId String
+  keyHash   String    @unique
+  keyPrefix String
+  revokedAt DateTime?
+  lastUsedAt DateTime?
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@index([projectId])
+}
+
+model Transaction {
+  id                 String      @id @default(cuid())
+  projectId          String
+  externalId         String
+  gatewayOrderId     String      @unique
+  method             String
+  status             String      @default("pending")
+  amount             Int
+  fee                Int?
+  totalPayment       Int?
+  paymentNumber      String?     @db.Text
+  expiredAt          DateTime?
+  paidAt             DateTime?
+  gatewayStatus      String?
+  gatewayCompletedAt DateTime?
+  gatewayRaw         Json?
+  project            Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  webhookLogs        WebhookLog[]
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+  @@index([externalId])
+}
+
+model WebhookLog {
+  id           String       @id @default(cuid())
+  projectId    String
+  transactionId String?
+  eventType    String
+  attemptNo    Int          @default(1)
+  isSuccess    Boolean      @default(false)
+  targetUrl    String
+  requestBody  Json?
+  responseCode Int?
+  responseBody String?      @db.Text
+  createdAt    DateTime     @default(now())
+  transaction  Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([transactionId])
+}
+
+model IdempotencyKey {
+  id             String   @id @default(cuid())
+  projectId      String
+  key            String
+  requestHash    String
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, key])
+  @@index([projectId, createdAt])
+}
+
+model RateLimitWindow {
+  id          String   @id @default(cuid())
+  projectId   String
+  routeKey    String
+  windowStart DateTime
+  count       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, routeKey, windowStart])
+  @@index([projectId, createdAt])
+}
+
+model PlatformConfig {
+  id          Int      @id
+  platformFee Int      @default(0)
+  pakasirFee  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

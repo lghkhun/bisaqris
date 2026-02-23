@@ -1,0 +1,22 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: bisaqris-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: bisaqris
+      MYSQL_USER: bisaqris
+      MYSQL_PASSWORD: bisaqris
+    ports:
+      - "3306:3306"
+    volumes:
+      - bisaqris_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -proot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  bisaqris_mysql_data:

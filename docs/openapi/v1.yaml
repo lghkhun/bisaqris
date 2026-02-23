@@ -1,0 +1,474 @@
+openapi: 3.1.0
+info:
+  title: Pay MVP API
+  version: "1.0.0"
+  description: |
+    OpenAPI v1 untuk endpoint publik Pay MVP (Milestone 4).
+servers:
+  - url: https://paymvp.com/api/v1
+    description: Production
+  - url: http://localhost:3000/api/v1
+    description: Local
+tags:
+  - name: Transactions
+  - name: Internal
+security:
+  - bearerAuth: []
+paths:
+  /transactions:
+    post:
+      tags: [Transactions]
+      summary: Create transaction
+      operationId: createTransaction
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+          description: Required idempotency key for safe retry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransactionRequest"
+            example:
+              external_id: INV-2026-0001
+              method: qris
+              amount: 150000
+              customer_name: Budi
+      responses:
+        "201":
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateTransactionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/IdempotencyConflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/GatewayNotConfigured"
+        "502":
+          $ref: "#/components/responses/GatewayError"
+    get:
+      tags: [Transactions]
+      summary: List transactions
+      operationId: listTransactions
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, paid, failed, expired]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Transactions list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTransactionsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /transactions/{transactionId}:
+    get:
+      tags: [Transactions]
+      summary: Get transaction detail
+      operationId: getTransactionDetail
+      parameters:
+        - in: path
+          name: transactionId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transaction detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetTransactionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /transactions/{transactionId}/sync:
+    post:
+      tags: [Transactions]
+      summary: Sync transaction status from gateway
+      operationId: syncTransaction
+      parameters:
+        - in: path
+          name: transactionId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Synced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncTransactionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/GatewayError"
+
+  /internal/gateway/callback:
+    post:
+      tags: [Internal]
+      summary: Gateway callback receiver
+      operationId: gatewayCallback
+      security: []
+      parameters:
+        - in: query
+          name: token
+          required: false
+          schema:
+            type: string
+          description: Required when GATEWAY_CALLBACK_TOKEN is configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GatewayCallbackRequest"
+            example:
+              order_id: paymvp-abc123
+              status: completed
+      responses:
+        "200":
+          description: Callback accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayCallbackResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/GatewayNotConfigured"
+        "502":
+          $ref: "#/components/responses/GatewayError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+
+  responses:
+    InvalidRequest:
+      description: Invalid request payload or parameter
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: INVALID_REQUEST
+              message: Invalid payload
+              details: []
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: UNAUTHORIZED
+              message: Invalid API key
+              details: []
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: NOT_FOUND
+              message: Transaction not found
+              details: []
+    GatewayError:
+      description: Error when communicating with Gateway
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: GATEWAY_ERROR
+              message: Gateway detail fetch failed
+              details: []
+    IdempotencyConflict:
+      description: Idempotency key already used with different payload or still in progress
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: IDEMPOTENCY_CONFLICT
+              message: Idempotency key already used with different payload
+              details: []
+    RateLimited:
+      description: Too many requests in current window
+      headers:
+        x-ratelimit-limit:
+          schema:
+            type: string
+        x-ratelimit-remaining:
+          schema:
+            type: string
+        x-ratelimit-reset:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: RATE_LIMITED
+              message: Too many requests
+              details: []
+    GatewayNotConfigured:
+      description: Gateway env missing
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: GATEWAY_NOT_CONFIGURED
+              message: Gateway credentials are missing
+              details: []
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: array
+              items: {}
+
+    SuccessEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data: {}
+
+    CreateTransactionRequest:
+      type: object
+      additionalProperties: false
+      required: [external_id, method, amount]
+      properties:
+        external_id:
+          type: string
+          minLength: 3
+        method:
+          type: string
+          minLength: 2
+        amount:
+          type: integer
+          minimum: 1
+        customer_name:
+          type: string
+
+    TransactionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, external_id, method, status, amount, fee, total_payment, created_at]
+      properties:
+        id:
+          type: string
+        external_id:
+          type: string
+        method:
+          type: string
+        status:
+          type: string
+          enum: [pending, paid, failed, expired]
+        amount:
+          type: integer
+        fee:
+          type: integer
+        total_payment:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    TransactionDetail:
+      allOf:
+        - $ref: "#/components/schemas/TransactionSummary"
+        - type: object
+          additionalProperties: false
+          required:
+            [
+              gateway_order_id,
+              payment_number,
+              expired_at,
+              paid_at
+            ]
+          properties:
+            gateway_order_id:
+              type: string
+            payment_number:
+              type: string
+              nullable: true
+            expired_at:
+              type: string
+              format: date-time
+              nullable: true
+            paid_at:
+              type: string
+              format: date-time
+              nullable: true
+
+    CreateTransactionResponse:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/TransactionDetail"
+
+    GetTransactionResponse:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/TransactionDetail"
+
+    ListTransactionsResponse:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, pagination]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/TransactionSummary"
+                pagination:
+                  type: object
+                  required: [page, per_page, total]
+                  properties:
+                    page:
+                      type: integer
+                    per_page:
+                      type: integer
+                    total:
+                      type: integer
+
+    SyncTransactionResponse:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [id, status, gateway_status, paid_at]
+              properties:
+                id:
+                  type: string
+                status:
+                  type: string
+                  enum: [pending, paid, failed, expired]
+                gateway_status:
+                  type: string
+                  nullable: true
+                paid_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+
+    GatewayCallbackRequest:
+      type: object
+      additionalProperties: true
+      required: [order_id]
+      properties:
+        order_id:
+          type: string
+        status:
+          type: string
+
+    GatewayCallbackResponse:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [transaction_id, status]
+              properties:
+                transaction_id:
+                  type: string
+                status:
+                  type: string
+                  enum: [pending, paid, failed, expired]
